@@ -6,7 +6,7 @@ from pathlib import Path
 class ProjectConfig:
     image_size: tuple[int, int] = (128, 128)
     batch_size: int = 32
-    num_classes: int = 2
+    num_classes: int = 10
     epochs: int = 10
     learning_rate: float = 1e-3
     dropout_rate: float = 0.3
