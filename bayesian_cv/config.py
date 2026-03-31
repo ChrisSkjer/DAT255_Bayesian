@@ -11,6 +11,8 @@ class ProjectConfig:
     learning_rate: float = 1e-3
     dropout_rate: float = 0.3
     mc_samples: int = 30
+    conv_filters: tuple[int, ...] = (32, 64, 128)
+    dense_units: int = 128
 
     train_dir: Path = Path("data/train")
     val_dir: Path = Path("data/val")

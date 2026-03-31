@@ -12,10 +12,35 @@ class MCDropout(tf.keras.layers.Dropout):
 
 def build_model(config: ProjectConfig) -> tf.keras.Model:
     """
-    TODO:
-    - Build your CNN in Keras.
-    - Use MCDropout where you want dropout active during inference.
-    - Compile and return the model.
+    The model is a simple CNN with dropout layers for MC sampling. 
+    You can modify the architecture as needed.
     """
-    _ = config
-    raise NotImplementedError("Implement model creation in bayesian_cv/model.py")
+    inputs = tf.keras.Input(
+        shape=(config.image_size, config.image_size, 3),
+        name = "input_image")
+    
+    x = tf.keras.layers.rescaling(1.0 / 255)(inputs) #for å få fine tall
+
+    for filters in config.conv_filters:
+        x = tf.keras.layers.Conv2D(filters, (3,3), activation='relu')(x)
+        x = tf.keras.layers.MaxPooling2D((2,2))(x)
+        x = MCDropout(config.dropout_rate)(x)
+
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(config.dense_units, activation='relu')(x)
+    x = MCDropout(config.dropout_rate)(x)
+    
+
+    outputs = tf.keras.layers.Dense(config.num_classes, activation='softmax')(x)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=config.learning_rate),
+        loss="categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+    model.summary()
+    
+    return model
+
+

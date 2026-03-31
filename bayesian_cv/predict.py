@@ -11,11 +11,26 @@ def main() -> None:
 
     model = tf.keras.models.load_model(config.model_path)
 
-    # TODO:
-    # - Fetch a batch or individual samples from test_ds.
-    # - Call mc_predict(...) to estimate uncertainty.
-    _ = (model, test_ds, mc_predict)
-    raise NotImplementedError("Implement inference in bayesian_cv/predict.py")
+    batch = next(iter(test_ds))
+    images = batch[0] if isinstance(batch, tuple) else batch
+
+    mean_prediction, variance, predictive_entropy = mc_predict(
+        model,
+        images,
+        config.mc_samples,
+    )
+
+    predicted_classes = mean_prediction.argmax(axis=1)
+    mean_variance = variance.mean(axis=1)
+
+    for index, (predicted_class, entropy, avg_variance) in enumerate(
+        zip(predicted_classes, predictive_entropy, mean_variance),
+        start=1,
+    ):
+        print(
+            f"sample={index} predicted_class={predicted_class} "
+            f"entropy={entropy:.4f} mean_variance={avg_variance:.6f}"
+        )
 
 
 if __name__ == "__main__":
