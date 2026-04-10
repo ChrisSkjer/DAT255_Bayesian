@@ -16,7 +16,7 @@ def _find_repo_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
 
     for candidate in [current, *current.parents]:
-        if (candidate / ".git").exists() and (candidate / "bayesian_cv").exists():
+        if (candidate / "bayesian_cv").is_dir() and (candidate / "requirements.txt").is_file():
             return candidate
 
     raise FileNotFoundError("Could not locate the project root.")
