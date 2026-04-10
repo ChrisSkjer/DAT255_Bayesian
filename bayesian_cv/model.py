@@ -16,10 +16,10 @@ def build_model(config: ProjectConfig) -> tf.keras.Model:
     You can modify the architecture as needed.
     """
     inputs = tf.keras.Input(
-        shape=(config.image_size, config.image_size, 3),
+        shape=(*config.image_size, 3),
         name = "input_image")
     
-    x = tf.keras.layers.rescaling(1.0 / 255)(inputs) #for å få fine tall
+    x = tf.keras.layers.Rescaling(1.0 / 255)(inputs) #for å få fine tall
 
     for filters in config.conv_filters:
         x = tf.keras.layers.Conv2D(filters, (3,3), activation='relu')(x)
