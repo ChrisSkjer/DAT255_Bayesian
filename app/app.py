@@ -1,11 +1,18 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+import tempfile
 
 import numpy as np
 import streamlit as st
 import tensorflow as tf
 from PIL import Image
+
+try:
+    import wandb
+    HAS_WANDB = True
+except ImportError:
+    HAS_WANDB = False
 
 
 # ============================================================================
@@ -16,7 +23,10 @@ class ProjectConfig:
     """Configuration for the app."""
     image_size: tuple[int, int] = (128, 128)
     mc_samples: int = 30
-    model_path: Path = field(default_factory=lambda: Path.cwd() / "artifacts" / "models" / "model.keras")
+    # W&B artifact path
+    wandb_entity: str = "christoffer-skjer-h-gskulen-p-vestlandet"
+    wandb_project: str = "dat255-bayesian"
+    wandb_artifact: str = "notebook-04-best-model:v1"
 
 
 def get_config() -> ProjectConfig:
@@ -79,13 +89,19 @@ st.markdown(
 # Sidebar for configuration
 st.sidebar.header("⚙️ Configuration")
 config = get_config()
+
+# Initialize session state for mc_samples if not exists
+if "mc_samples" not in st.session_state:
+    st.session_state.mc_samples = config.mc_samples
+
 mc_samples = st.sidebar.slider(
     "MC Samples for Uncertainty Estimation",
     min_value=10,
     max_value=100,
-    value=config.mc_samples,
+    value=st.session_state.mc_samples,
     step=10,
     help="More samples = more accurate uncertainty, but slower predictions",
+    key="mc_samples",
 )
 
 # ImageNette class names
@@ -96,21 +112,37 @@ CLASS_NAMES = [
 
 @st.cache_resource
 def load_model():
-    """Load the trained model with custom MCDropout layer."""
-    model_path = Path(config.model_path)
-    
-    if not model_path.exists():
-        st.error(f"❌ Model not found at {model_path}. Please train the model first using notebook 4.")
+    """Load the trained model from Weights & Biases."""
+    if not HAS_WANDB:
+        st.error("❌ wandb package not installed. Install it with: pip install wandb")
         st.stop()
     
     try:
+        st.info("📥 Downloading model from Weights & Biases...")
+        
+        # Use read-only artifact access
+        api = wandb.Api()
+        artifact_path = f"{config.wandb_entity}/{config.wandb_project}/{config.wandb_artifact}"
+        artifact = api.artifact(artifact_path)
+        artifact_dir = artifact.download()
+        
+        st.success("✅ Model downloaded successfully!")
+        
+        # Find the model file in the artifact directory
+        model_files = list(Path(artifact_dir).glob("*.keras"))
+        if not model_files:
+            st.error(f"❌ No .keras file found in artifact directory: {artifact_dir}")
+            st.stop()
+        
+        model_path = model_files[0]
+        
         model = tf.keras.models.load_model(
             str(model_path),
             custom_objects={"MCDropout": MCDropout},
         )
         return model
     except Exception as e:
-        st.error(f"❌ Error loading model: {e}")
+        st.error(f"❌ Error loading model from W&B: {e}")
         st.stop()
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
@@ -273,7 +305,7 @@ def main():
         
         with config_cols[2]:
             st.write(f"**Dropout Rate:** 0.3")
-            st.write(f"**Model Path:** `{config.model_path}`")
+            st.write(f"**Source:** Weights & Biases (W&B)")
 
 if __name__ == "__main__":
     main()
