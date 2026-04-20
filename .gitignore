@@ -10,3 +10,5 @@ data/
 artifacts/
 
 .ipynb_checkpoints/
+
+.vscode/
