@@ -23,10 +23,14 @@ class ProjectConfig:
     """Configuration for the app."""
     image_size: tuple[int, int] = (128, 128)
     mc_samples: int = 30
-    # W&B artifact path
+    # W&B artifact paths
     wandb_entity: str = "christoffer-skjer-h-gskulen-p-vestlandet"
     wandb_project: str = "dat255-bayesian"
-    wandb_artifact: str = "notebook-04-best-model:v1"
+    wandb_artifacts: dict[str, str] = field(default_factory=lambda: {
+        "Dropout 0.1": "notebook-04-dropout-0-1-model:v0",
+        "Dropout 0.3": "notebook-04-dropout-0-3-model:v0",
+        "Dropout 0.5": "notebook-04-dropout-0-5-model:v0",
+    })
 
 
 def get_config() -> ProjectConfig:
@@ -90,6 +94,14 @@ st.markdown(
 st.sidebar.header("⚙️ Configuration")
 config = get_config()
 
+# Model selection
+st.sidebar.subheader("🤖 Model Selection")
+selected_model = st.sidebar.selectbox(
+    "Choose a model by dropout rate:",
+    options=list(config.wandb_artifacts.keys()),
+    help="Different dropout rates affect uncertainty estimation"
+)
+
 # Initialize session state for mc_samples if not exists
 if "mc_samples" not in st.session_state:
     st.session_state.mc_samples = config.mc_samples
@@ -111,22 +123,25 @@ CLASS_NAMES = [
 ]
 
 @st.cache_resource
-def load_model():
-    """Load the trained model from Weights & Biases."""
+def load_model(model_name: str = "Dropout 0.3"):
+    """Load a trained model from Weights & Biases."""
     if not HAS_WANDB:
         st.error("❌ wandb package not installed. Install it with: pip install wandb")
         st.stop()
     
     try:
-        st.info("📥 Downloading model from Weights & Biases...")
+        config = get_config()
+        artifact_name = config.wandb_artifacts.get(model_name, config.wandb_artifacts["Dropout 0.3"])
+        
+        st.info(f"📥 Downloading {model_name} from Weights & Biases...")
         
         # Use read-only artifact access
         api = wandb.Api()
-        artifact_path = f"{config.wandb_entity}/{config.wandb_project}/{config.wandb_artifact}"
+        artifact_path = f"{config.wandb_entity}/{config.wandb_project}/{artifact_name}"
         artifact = api.artifact(artifact_path)
         artifact_dir = artifact.download()
         
-        st.success("✅ Model downloaded successfully!")
+        st.success(f"✅ {model_name} downloaded successfully!")
         
         # Find the model file in the artifact directory
         model_files = list(Path(artifact_dir).glob("*.keras"))
@@ -142,7 +157,7 @@ def load_model():
         )
         return model
     except Exception as e:
-        st.error(f"❌ Error loading model from W&B: {e}")
+        st.error(f"❌ Error loading {model_name} from W&B: {e}")
         st.stop()
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
@@ -159,8 +174,8 @@ def preprocess_image(image: Image.Image) -> np.ndarray:
 
 def main():
     """Main app logic."""
-    # Load the model
-    model = load_model()
+    # Load the selected model
+    model = load_model(selected_model)
     
     # Create tabs for different input methods
     tab1, tab2 = st.tabs(["📤 Upload Image", "📋 About Model"])
@@ -206,6 +221,7 @@ def main():
                 pred_confidence = pred_probs[pred_class]
                 entropy = predictive_entropy[0]
                 avg_variance = np.mean(variance[0])
+                avg_std = np.sqrt(avg_variance)  # Standard deviation
                 
                 # Display main prediction
                 st.markdown("### 🎯 Top Prediction")
@@ -217,7 +233,7 @@ def main():
                 
                 # Display uncertainty metrics
                 st.markdown("### 📊 Uncertainty Metrics")
-                col_unc1, col_unc2 = st.columns(2)
+                col_unc1, col_unc2, col_unc3 = st.columns(3)
                 
                 with col_unc1:
                     st.metric(
@@ -231,6 +247,13 @@ def main():
                         "Mean Variance",
                         f"{avg_variance:.6f}",
                         help="Variance across MC samples",
+                    )
+                
+                with col_unc3:
+                    st.metric(
+                        "Mean Std Dev",
+                        f"{avg_std * 100:.4f}%",
+                        help="Standard deviation across MC samples",
                     )
             
             # Show top-5 predictions
@@ -304,7 +327,8 @@ def main():
             st.write(f"**Dense Units:** 128")
         
         with config_cols[2]:
-            st.write(f"**Dropout Rate:** 0.3")
+            dropout_rate = selected_model.split()[-1]  # Extract "0.1", "0.3", or "0.5"
+            st.write(f"**Dropout Rate:** {dropout_rate}")
             st.write(f"**Source:** Weights & Biases (W&B)")
 
 if __name__ == "__main__":
