@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import tempfile
 
+import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 import tensorflow as tf
@@ -27,9 +28,9 @@ class ProjectConfig:
     wandb_entity: str = "christoffer-skjer-h-gskulen-p-vestlandet"
     wandb_project: str = "dat255-bayesian"
     wandb_artifacts: dict[str, str] = field(default_factory=lambda: {
-        "Dropout 0.1": "notebook-04-dropout-0-1-model:v0",
-        "Dropout 0.3": "notebook-04-dropout-0-3-model:v0",
-        "Dropout 0.5": "notebook-04-dropout-0-5-model:v0",
+        "Dropout 0.1": "notebook-04-dropout-0-1-model:v3",
+        "Dropout 0.3": "notebook-04-dropout-0-3-model:v3",
+        "Dropout 0.5": "notebook-04-dropout-0-5-model:v3",
     })
 
 
@@ -69,6 +70,53 @@ def mc_predict(
         axis=1,
     )
     return mean_prediction, variance, predictive_entropy
+
+
+# ============================================================================
+# Grad-CAM Utilities
+# ============================================================================
+def find_last_conv_layer_name(model: tf.keras.Model) -> str:
+    """Return the name of the last Conv2D layer in the model."""
+    for layer in reversed(model.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            return layer.name
+    raise ValueError("No Conv2D layer was found in the model.")
+
+
+def make_gradcam_heatmap(
+    model: tf.keras.Model,
+    image_tensor: tf.Tensor,
+    class_index: int,
+    conv_layer_name: str,
+) -> np.ndarray:
+    """Create a Grad-CAM heatmap for one image and one target class."""
+    grad_model = tf.keras.Model(
+        inputs=model.inputs,
+        outputs=[model.get_layer(conv_layer_name).output, model.output],
+    )
+
+    with tf.GradientTape() as tape:
+        conv_outputs, predictions = grad_model(image_tensor, training=False)
+        target_score = predictions[:, class_index]
+
+    gradients = tape.gradient(target_score, conv_outputs)
+    pooled_gradients = tf.reduce_mean(gradients, axis=(0, 1, 2))
+    conv_outputs = conv_outputs[0]
+    heatmap = tf.reduce_sum(conv_outputs * pooled_gradients, axis=-1)
+    heatmap = tf.maximum(heatmap, 0)
+    max_value = tf.reduce_max(heatmap)
+    if float(max_value) > 0:
+        heatmap = heatmap / max_value
+    return heatmap.numpy()
+
+
+def overlay_gradcam_on_image(image: np.ndarray, heatmap: np.ndarray, alpha: float = 0.4) -> np.ndarray:
+    """Overlay a Grad-CAM heatmap on top of the original RGB image."""
+    image = image.astype(np.float32) / 255.0
+    heatmap_resized = tf.image.resize(heatmap[..., np.newaxis], image.shape[:2]).numpy().squeeze()
+    colored_heatmap = plt.colormaps["jet"](heatmap_resized)[..., :3]
+    overlay = np.clip((1 - alpha) * image + alpha * colored_heatmap, 0, 1)
+    return (overlay * 255).astype(np.uint8)
 
 
 # ============================================================================
@@ -132,6 +180,11 @@ def load_model(model_name: str = "Dropout 0.3"):
     try:
         config = get_config()
         artifact_name = config.wandb_artifacts.get(model_name, config.wandb_artifacts["Dropout 0.3"])
+        
+        # Get API key from Streamlit secrets or environment
+        WANDB_API_KEY = st.secrets.get("WANDB_API_KEY", os.environ.get("WANDB_API_KEY", ""))
+        if WANDB_API_KEY:
+            wandb.login(key=WANDB_API_KEY)
         
         st.info(f"📥 Downloading {model_name} from Weights & Biases...")
         
@@ -214,6 +267,21 @@ def main():
                         img_array,
                         mc_samples,
                     )
+                    
+                    # Compute Grad-CAM for the predicted class
+                    try:
+                        conv_layer_name = find_last_conv_layer_name(model)
+                        pred_class = int(np.argmax(mean_prediction[0]))
+                        heatmap = make_gradcam_heatmap(
+                            model,
+                            img_array,
+                            pred_class,
+                            conv_layer_name,
+                        )
+                        gradcam_computed = True
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not compute Grad-CAM: {e}")
+                        gradcam_computed = False
                 
                 # Get prediction results for single image
                 pred_probs = mean_prediction[0]
@@ -255,6 +323,29 @@ def main():
                         f"{avg_std * 100:.4f}%",
                         help="Standard deviation across MC samples",
                     )
+            
+            # Display Grad-CAM visualization if computed
+            if gradcam_computed:
+                st.subheader("🔥 Grad-CAM Visualization")
+                col_gradcam1, col_gradcam2 = st.columns([1, 1])
+                
+                with col_gradcam1:
+                    st.markdown("**Original Image**")
+                    st.image(image, use_column_width=True)
+                
+                with col_gradcam2:
+                    st.markdown("**Grad-CAM Overlay**")
+                    gradcam_overlay = overlay_gradcam_on_image(
+                        np.array(image.convert("RGB").resize(config.image_size)),
+                        heatmap,
+                        alpha=0.4
+                    )
+                    st.image(gradcam_overlay, use_column_width=True)
+                
+                st.markdown(
+                    f"**Interpretation:** The red/yellow areas highlight regions that influenced the model's "
+                    f"prediction for the '{CLASS_NAMES[pred_class]}' class. Brighter colors = stronger influence."
+                )
             
             # Show top-5 predictions
             st.subheader("📈 Top-5 Predictions")
