@@ -20,6 +20,16 @@ except ImportError:
 # Configuration - From notebook 4
 # ============================================================================
 @dataclass(frozen=True)
+class VarianceBin:
+    """Variance bin thresholds and expected accuracy for a model."""
+    name: str
+    min_var: float
+    max_var: float
+    accuracy: float
+    color: str
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     """Configuration for the app."""
     image_size: tuple[int, int] = (128, 128)
@@ -32,11 +42,52 @@ class ProjectConfig:
         "Dropout 0.3": "notebook-04-dropout-0-3-model:v3",
         "Dropout 0.5": "notebook-04-dropout-0-5-model:v3",
     })
+    # Variance bins from study results
+    variance_bins: dict[str, list[VarianceBin]] = field(default_factory=lambda: {
+        "Dropout 0.1": [
+            VarianceBin("Very Low", 0.000000, 0.000015, 0.9936, "🟢"),
+            VarianceBin("Low", 0.000016, 0.000942, 0.9631, "🟡"),
+            VarianceBin("Medium", 0.000943, 0.006160, 0.8726, "🟠"),
+            VarianceBin("High", 0.006163, 0.011606, 0.6051, "🔴"),
+            VarianceBin("Very High", 0.011607, float('inf'), 0.5363, "🔴🔴"),
+        ],
+        "Dropout 0.3": [
+            VarianceBin("Very Low", 0.000000, 0.000015, 1.0000, "🟢"),
+            VarianceBin("Low", 0.000016, 0.000942, 0.9631, "🟡"),
+            VarianceBin("Medium", 0.000943, 0.006160, 0.8726, "🟠"),
+            VarianceBin("High", 0.006163, 0.011606, 0.6051, "🔴"),
+            VarianceBin("Very High", 0.011607, float('inf'), 0.5363, "🔴🔴"),
+        ],
+        "Dropout 0.5": [
+            VarianceBin("Very Low", 0.000000, 0.000319, 0.9962, "🟢"),
+            VarianceBin("Low", 0.000323, 0.003300, 0.9554, "🟡"),
+            VarianceBin("Medium", 0.003301, 0.007716, 0.7567, "🟠"),
+            VarianceBin("High", 0.007718, 0.011568, 0.5962, "🔴"),
+            VarianceBin("Very High", 0.011573, float('inf'), 0.5312, "🔴🔴"),
+        ],
+    })
 
 
 def get_config() -> ProjectConfig:
     """Return the app configuration."""
     return ProjectConfig()
+
+
+def get_variance_category(variance: float, model_name: str) -> tuple[VarianceBin, float]:
+    """Get the variance bin category for a given variance value and model.
+    
+    Returns:
+        Tuple of (VarianceBin, average_class_variance)
+    """
+    config = get_config()
+    bins = config.variance_bins.get(model_name, config.variance_bins["Dropout 0.3"])
+    
+    for bin_info in bins:
+        if bin_info.min_var <= variance <= bin_info.max_var:
+            return bin_info
+    
+    # If no bin matches (shouldn't happen), return Very High
+    return bins[-1]
 
 
 # ============================================================================
@@ -291,6 +342,9 @@ def main():
                 avg_variance = np.mean(variance[0])
                 avg_std = np.sqrt(avg_variance)  # Standard deviation
                 
+                # Get variance category
+                variance_bin = get_variance_category(avg_variance, selected_model)
+                
                 # Display main prediction
                 st.markdown("### 🎯 Top Prediction")
                 st.metric(
@@ -298,6 +352,29 @@ def main():
                     f"{pred_confidence * 100:.1f}%",
                     help=f"Class index: {pred_class}"
                 )
+                
+                # Display uncertainty category badge
+                category_color_map = {
+                    "Very Low": "#90EE90",
+                    "Low": "#FFD700", 
+                    "Medium": "#FFA500",
+                    "High": "#FF6347",
+                    "Very High": "#DC143C"
+                }
+                badge_color = category_color_map.get(variance_bin.name, "#808080")
+                st.markdown(f"""
+                <div style="padding: 15px; border-radius: 10px; background-color: {badge_color}; text-align: center; margin: 10px 0;">
+                    <h3 style="margin: 5px 0; color: white;">
+                        {variance_bin.color} Confidence Category: <b>{variance_bin.name}</b>
+                    </h3>
+                    <p style="margin: 5px 0; color: white;">
+                        Expected Accuracy: <b>{variance_bin.accuracy*100:.1f}%</b>
+                    </p>
+                    <p style="margin: 5px 0; font-size: 0.85em; color: rgba(255,255,255,0.9);">
+                        Variance range: {variance_bin.min_var:.6f} - {variance_bin.max_var:.6f}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 # Display uncertainty metrics
                 st.markdown("### 📊 Uncertainty Metrics")
