@@ -45,7 +45,7 @@ class ProjectConfig:
     # Variance bins from study results
     variance_bins: dict[str, list[VarianceBin]] = field(default_factory=lambda: {
         "Dropout 0.1": [
-            VarianceBin("Very Low", 0.000000, 0.000015, 0.9936, "🟢"),
+            VarianceBin("Very low", 0.000000, 0.000015, 0.9936, "🟢"),
             VarianceBin("Low", 0.000016, 0.000942, 0.9631, "🟡"),
             VarianceBin("Medium", 0.000943, 0.006160, 0.8726, "🟠"),
             VarianceBin("High", 0.006163, 0.011606, 0.6051, "🔴"),
@@ -355,8 +355,8 @@ def main():
                 
                 # Display uncertainty category badge
                 category_color_map = {
-                    "Very Low": "#90EE90",
-                    "Low": "#FFD700", 
+                    "Very Low": "#65F965FC",
+                    "Low": "#ADFC8D", 
                     "Medium": "#FFA500",
                     "High": "#FF6347",
                     "Very High": "#DC143C"
@@ -365,7 +365,7 @@ def main():
                 st.markdown(f"""
                 <div style="padding: 15px; border-radius: 10px; background-color: {badge_color}; text-align: center; margin: 10px 0;">
                     <h3 style="margin: 5px 0; color: white;">
-                        {variance_bin.color} Confidence Category: <b>{variance_bin.name}</b>
+                        {variance_bin.color} Variance Category: <b>{variance_bin.name}</b>
                     </h3>
                     <p style="margin: 5px 0; color: white;">
                         Expected Accuracy: <b>{variance_bin.accuracy*100:.1f}%</b>
