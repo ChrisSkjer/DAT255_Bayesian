@@ -12,4 +12,9 @@ artifacts/
 .ipynb_checkpoints/
 
 .vscode/
-.streamlit/secrets.toml"
+
+# Local secrets
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
